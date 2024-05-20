@@ -1,5 +1,4 @@
 using CurrencyApp.Models;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Newtonsoft.Json;
 
 namespace CurrencyApp.Services;
@@ -21,11 +20,6 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
                 date = date.AddDays(-1); // If it's before 16:00 CET, we need to get the rates for the previous day
             }
             Dictionary<string, double> rates = await GetCorrespondingRates(date.Date, from);
-            if (!rates.ContainsKey(to))
-            {
-                _logger.LogError($"No exchange rate found for {to} on {date:yyyy-MM-dd}");
-                throw new ValueProviderException($"No exchange rate found for {to} on {date:yyyy-MM-dd}");
-            }
             double rate = rates[to];
             return amount * rate;
         }
@@ -44,8 +38,8 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
             {
                 return _currencyDatabase[date][currency].Rates;
             }
-
-            var response = await _httpClientFactory.CreateClient().GetAsync($"https://api.frankfurter.app/{date:yyyy-MM-dd}?base={currency}");
+            string endpoint = $"https://api.frankfurter.app/{date:yyyy-MM-dd}?base={currency}";
+            var response = await _httpClientFactory.CreateClient().GetAsync(endpoint);
             try
             {
                 response.EnsureSuccessStatusCode();
@@ -55,7 +49,7 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
                 _logger.LogError($"An error occurred: {ex.Message}");
                 throw;
             }
-            var content = await response.Content.ReadAsStringAsync();
+            string content = await response.Content.ReadAsStringAsync();
             var exchangeRateModel = JsonConvert.DeserializeObject<ExchangeRateModel>(content);
 
             if (!_currencyDatabase.ContainsKey(date))

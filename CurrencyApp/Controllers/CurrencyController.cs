@@ -40,10 +40,6 @@ namespace CurrencyApp.Controllers
                 double result = await _currencyService.ConvertCurrency(from.ToUpper(), to.ToUpper(), amount);
                 return Ok(new { from, to, amount, result });
             }
-            catch (ValueProviderException ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
             catch (HttpRequestException ex)
             {
                 return BadRequest(new { error = ex.Message });
