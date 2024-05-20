@@ -1,4 +1,7 @@
 using CurrencyApp.Services;
+using Polly;
+using Polly.Extensions.Http;
+using Polly.Retry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,7 +15,19 @@ builder.Logging.AddSimpleConsole(options =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddControllers().AddNewtonsoftJson();
-builder.Services.AddHttpClient();
+
+AsyncRetryPolicy<HttpResponseMessage> retryPolicy = HttpPolicyExtensions
+    .HandleTransientHttpError()
+    .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.RequestTimeout)
+    .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(10));
+
+builder.Services.AddHttpClient("emp",(serviceProvider, client) =>
+    {
+        client.BaseAddress = new Uri("https://api.frankfurter.app/");
+    })
+    .AddPolicyHandler(retryPolicy);
+
+
 builder.Services.AddSingleton<CurrencyService>();
 builder.Services.AddCors(options =>
 {

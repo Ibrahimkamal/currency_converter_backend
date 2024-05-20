@@ -13,7 +13,7 @@ namespace CurrencyApp.Controllers
         private static readonly HashSet<string> ExcludedCurrencies =new HashSet<string> { "TRY", "PLN", "THB", "MXN" };
         private static readonly HashSet<string> AllowedCurrencies =  new HashSet<string>
         {
-            "AUD", "BGN", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK", "GBP", "HKD",
+            "AUD", "BGN", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK","EUR", "GBP", "HKD",
             "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KRW", "MXN", "MYR", "NOK",
             "NZD", "PHP", "PLN", "RON", "SEK", "SGD", "THB", "TRY", "USD", "ZAR"
         };
@@ -57,13 +57,55 @@ namespace CurrencyApp.Controllers
         {
             try
             {
-                baseCurrency = baseCurrency.ToUpper();
-                if (string.IsNullOrWhiteSpace(baseCurrency) || !AllowedCurrencies.Contains(baseCurrency))
+                if (string.IsNullOrWhiteSpace(baseCurrency))
                 {
-                    return BadRequest(new { error = "Missing or invalid 'base' parameter" });
+                    return BadRequest(new { error = "Missing or invalid 'baseCurrency' parameter" });
+                }
+                baseCurrency = baseCurrency.ToUpper();
+                if( !AllowedCurrencies.Contains(baseCurrency))
+                {
+                    return BadRequest(new { error = "Missing or invalid 'baseCurrency' parameter" });
                 }
                 ExchangeRateModel result = await _currencyService.GetLatest(baseCurrency);
                 return Ok(new {result.Base, result.Rates});
+            }
+            catch (HttpRequestException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+        [HttpGet("historical")]
+        public async Task<IActionResult> GetHistoricalRates([FromQuery] string baseCurrency, 
+            [FromQuery] DateTime startDate, 
+            [FromQuery] DateTime endDate,
+            [FromQuery] int pageIndex = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(baseCurrency))
+                {
+                    return BadRequest(new { error = "Missing or invalid 'baseCurrency' parameter" });
+                }
+                baseCurrency = baseCurrency.ToUpper();
+                if( !AllowedCurrencies.Contains(baseCurrency))
+                {
+                    return BadRequest(new { error = "Missing or invalid 'baseCurrency' parameter" });
+                }
+                if(endDate < startDate)
+                {
+                    return BadRequest(new { error = "End date must be greater than start date" });
+                }
+                if(endDate> DateTime.Now.Date)
+                {
+                    return BadRequest(new { error = "End date must be less than or equal to today's date" });
+                }
+                List<ExchangeRateModel> result = await _currencyService.GetHistoricalRatesTimeSeries(baseCurrency, startDate, endDate, pageIndex, pageSize);
+                return Ok(new {result});
             }
             catch (HttpRequestException ex)
             {

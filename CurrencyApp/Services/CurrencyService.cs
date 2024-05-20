@@ -52,6 +52,27 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
             throw;
         }
     }
+    
+    public async Task<List<ExchangeRateModel>> GetHistoricalRatesTimeSeries(string baseCurrency,DateTime startDate,DateTime endDate,int pageIndex,int pageSize)
+    {
+        try
+        {
+            int startIndex =pageSize*(pageIndex-1);
+            int endIndex = pageSize*pageIndex;
+            startDate = startDate.AddDays(startIndex).Date;
+            if(startDate.AddDays(endIndex)<endDate)
+            {
+                endDate = startDate.AddDays(endIndex);
+            }
+            endDate= endDate.Date;
+            return await GetHistoricalRates(baseCurrency,startDate,endDate);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"An error occurred: {ex.Message}");
+            throw;
+        }
+    }
     private async Task<ExchangeRateModel> GetCorrespondingRates(DateTime date, string currency)
     {
         try
@@ -94,7 +115,73 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
         }
     }
 
+    private async Task<List<ExchangeRateModel>> GetHistoricalRates(string baseCurrency,DateTime startDate,DateTime endDate)
+    {
+        try
+        {
+            for(DateTime date = startDate; date<=endDate; date = date.AddDays(1)) // make sure that everything is already in the database. if not will fetch from the API and update the database.
+            {
+                if(!_currencyDatabase.ContainsKey(date) || !_currencyDatabase[date].ContainsKey(baseCurrency))
+                {
+                    string endpoint = $"https://api.frankfurter.app/{startDate:yyyy-MM-dd}..{endDate:yyyy-MM-dd}?base={baseCurrency}";
+                    var response = await _httpClientFactory.CreateClient().GetAsync(endpoint);
+                    try
+                    {
+                        response.EnsureSuccessStatusCode();
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        _logger.LogError($"An error occurred: {ex.Message}");
+                        throw;
+                    }
+                    string content = await response.Content.ReadAsStringAsync();
+                    var timeSeriesExchangeRateModel = JsonConvert.DeserializeObject<TimeSeriesExchangeRateModel>(content);
 
+                    
+                    if (timeSeriesExchangeRateModel==null)
+                    {
+                        _logger.LogError($"No exchange rate found for {baseCurrency} on {date:yyyy-MM-dd}");
+                        throw new Exception($"No exchange rate found for {baseCurrency} on {date:yyyy-MM-dd}");
+                    }
+                    foreach (var rateEntry in timeSeriesExchangeRateModel.Rates)
+                    {
+                        // Extract the date and the rates for that date
+                        DateTime dt = rateEntry.Key;
+                        Dictionary<string, double> rates = rateEntry.Value;
+                        if (!_currencyDatabase.ContainsKey(dt))
+                        {
+                            _currencyDatabase[dt] = new Dictionary<string, ExchangeRateModel>();
+                        }
+
+                        _currencyDatabase[dt][baseCurrency] = new ExchangeRateModel
+                        {
+                            Amount = 1.0,
+                            Base = baseCurrency,
+                            Date = dt,
+                            Rates = rates
+                        };
+                    }
+                    
+                }
+            }
+            
+            List<ExchangeRateModel> exchangeRateModels = new List<ExchangeRateModel>();
+            for (DateTime date = startDate; date <= endDate; date = date.AddDays(1))
+            {
+                if(_currencyDatabase.ContainsKey(date) && _currencyDatabase[date].ContainsKey(baseCurrency))
+                {
+                    exchangeRateModels.Add(_currencyDatabase[date][baseCurrency]);
+                }
+            }
+
+            return exchangeRateModels;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"An error occurred: {ex.Message}");
+            throw;
+        }
+    }
     private bool IsAfter16Cet()
     {
         DateTimeOffset nowUtc = DateTimeOffset.UtcNow;
