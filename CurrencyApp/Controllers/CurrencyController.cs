@@ -1,3 +1,4 @@
+using CurrencyApp.Models;
 using CurrencyApp.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -27,6 +28,8 @@ namespace CurrencyApp.Controllers
                     return BadRequest(new { error = "Missing or invalid 'from', 'to', or 'amount' parameter" });
                 }
 
+                from = from.ToUpper();
+                to = to.ToUpper();
                 if (ExcludedCurrencies.Contains(from) || ExcludedCurrencies.Contains(to))
                 {
                     return BadRequest(new { error = $"Conversion involving {from} or {to} is not allowed" });
@@ -37,8 +40,30 @@ namespace CurrencyApp.Controllers
                     return BadRequest(new { error = $"Currency {from} or {to} is not supported" });
                 }
 
-                double result = await _currencyService.ConvertCurrency(from.ToUpper(), to.ToUpper(), amount);
+                double result = await _currencyService.ConvertCurrency(from, to, amount);
                 return Ok(new { from, to, amount, result });
+            }
+            catch (HttpRequestException ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, ex.Message);
+            }
+        }
+        [HttpGet("latest")]
+        public async Task<IActionResult> GetLatest([FromQuery] string baseCurrency)
+        {
+            try
+            {
+                baseCurrency = baseCurrency.ToUpper();
+                if (string.IsNullOrWhiteSpace(baseCurrency) || !AllowedCurrencies.Contains(baseCurrency))
+                {
+                    return BadRequest(new { error = "Missing or invalid 'base' parameter" });
+                }
+                ExchangeRateModel result = await _currencyService.GetLatest(baseCurrency);
+                return Ok(new {result.Base, result.Rates});
             }
             catch (HttpRequestException ex)
             {

@@ -13,14 +13,18 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
     {
         try
         {
+            if (from == to)
+            {
+                return amount;
+            }
             long utcNow = GetCet();
             DateTime date = DateTimeOffset.FromUnixTimeSeconds(utcNow).UtcDateTime;
             if (!IsAfter16Cet())
             {
                 date = date.AddDays(-1); // If it's before 16:00 CET, we need to get the rates for the previous day
             }
-            Dictionary<string, double> rates = await GetCorrespondingRates(date.Date, from);
-            double rate = rates[to];
+            ExchangeRateModel exchangeRate = await GetCorrespondingRates(date.Date, from);
+            double rate = exchangeRate.Rates[to];
             return amount * rate;
         }
         catch (Exception ex)
@@ -29,14 +33,32 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
             throw;
         }
     }
-
-    private async Task<Dictionary<string, double>> GetCorrespondingRates(DateTime date, string currency)
+    
+    public async Task<ExchangeRateModel> GetLatest(string baseCurrency)
+    {
+        try
+        {
+            long utcNow = GetCet();
+            DateTime date = DateTimeOffset.FromUnixTimeSeconds(utcNow).UtcDateTime;
+            if (!IsAfter16Cet())
+            {
+                date = date.AddDays(-1); // If it's before 16:00 CET, we need to get the rates for the previous day
+            }
+            return await GetCorrespondingRates(date.Date, baseCurrency);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"An error occurred: {ex.Message}");
+            throw;
+        }
+    }
+    private async Task<ExchangeRateModel> GetCorrespondingRates(DateTime date, string currency)
     {
         try
         {
             if (_currencyDatabase.ContainsKey(date) && _currencyDatabase[date].ContainsKey(currency))
             {
-                return _currencyDatabase[date][currency].Rates;
+                return _currencyDatabase[date][currency];
             }
             string endpoint = $"https://api.frankfurter.app/{date:yyyy-MM-dd}?base={currency}";
             var response = await _httpClientFactory.CreateClient().GetAsync(endpoint);
@@ -63,7 +85,7 @@ public class CurrencyService(IHttpClientFactory httpClientFactory, ILogger<Curre
             }
             _currencyDatabase[date][currency] = exchangeRateModel;
 
-            return exchangeRateModel.Rates;
+            return exchangeRateModel;
         }
         catch (Exception ex)
         {
